@@ -71,7 +71,7 @@ functions:
           authorizer: Auth
           request:
             schema:
-              application/json: ${file(models/create-todo-model.json)}
+              application/json: ${file(validation/create-todo-model.json)}
     role: CreateTodoRole
 
   UpdateTodo:
@@ -80,6 +80,9 @@ functions:
       - http:
           method: patch
           path: todos/{todoId}
+          request:
+            schema:
+              application/json: ${file(validation/update-todo-model.json)}
     role: UpdateTodoRole
 
   DeleteTodo:
