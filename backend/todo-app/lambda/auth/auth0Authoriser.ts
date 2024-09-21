@@ -7,7 +7,7 @@ import axios from 'axios'
 
 const log = createLogger('auth')
 
-const jwkUrls = ``
+const jwkUrls = `https://dev-blu3dj4g2mva2q82.us.auth0.com/.well-known/jwks.json`
 
 export const handler = async (
   event: CustomAuthorizerEvent
