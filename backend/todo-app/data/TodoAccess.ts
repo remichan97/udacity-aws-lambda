@@ -9,7 +9,7 @@ export class TodoAccess {
   constructor(
     xray = XRay.captureAWS(AWS),
     private readonly docClient: DocumentClient = new xray.DynamoDB.DocumentClient(),
-    private readonly s3Client: Types = new AWS.S3({ signatureVersion: 'v4' }),
+    private readonly s3Client: Types = new xray.S3({ signatureVersion: 'v4' }),
     private readonly todoTable = process.env.TODO_TABLE as string,
     private readonly s3BucketName = process.env.S3_BUCKET_NAME as string
   ) {}
