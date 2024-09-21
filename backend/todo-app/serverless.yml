@@ -5,14 +5,298 @@ app: todo-app
 # "service" is the name of this project. This will also be added to your AWS resource names.
 service: todo-app
 
+plugins:
+  - serverless-webpack
+  - serverless-iam-roles-per-function
+  - serverless-plugin-tracing
+
 provider:
   name: aws
   runtime: nodejs20.x
 
+  stage: ${opt:stage, 'dev'}
+  region: 'us-east-1'
+
+  tracing:
+    lambda: true
+    apiGateway: true
+
+  logs:
+    restApi:
+      accessLogging: true
+      executionLogging: true
+  
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action: 
+            - xray:PutTelemetryRecords
+            - xray:PutTraceSegments
+          Resource: "*"
+
+  environment:
+    TODOS_TABLE: Todos-${self:provider.stage}
+    TODOS_CREATED_AT_INDEX: CreatedAtIndex
+    ATTACHMENT_S3_BUCKET: serverless-c4-todo-images-${self:provider.stage}
+    SIGNED_URL_EXPIRATION: 300
+
 functions:
-  hello:
-    handler: handler.hello
+  Auth:
+    handler: todo-app/lambda/auth/auth0Authoriser.handler
     events:
-      - httpApi:
-          path: /
+      - http:
+          path: todos
           method: get
+          cors: true
+          authorizer: Auth
+
+  GetTodos:
+    handler: todo-app/lambda/http/getTodos.handler
+    events:
+      - http:
+          method: get
+          path: todos
+          cors: true
+          authorizer: Auth
+    role: GetTodoRole
+
+  CreateTodo:
+    handler: todo-app/lambda/http/createTodo.handler
+    events:
+      - http:
+          method: post
+          path: todos
+          cors: true
+          authorizer: Auth
+          request:
+            schema:
+              application/json: ${file(models/create-todo-model.json)}
+    role: CreateTodoRole
+
+  UpdateTodo:
+    handler: todo-app/lambda/http/updateTodo.handler
+    events:
+      - http:
+          method: patch
+          path: todos/{todoId}
+    role: UpdateTodoRole
+
+  DeleteTodo:
+    handler: todo-app/lambda/http/deleteTodo.handler
+    events:
+      - http:
+          method: delete
+          path: todos/{todoId}
+    role: DeleteTodoRole
+
+  GenerateUploadUrl:
+    handler: todo-app/lambda/http/generateUploadUrl.handler
+    events:
+      - http:
+          method: post
+          path: todos/{todoId}/attatchment
+    role: GenerateUploadUrlRole
+
+resources:
+  Resources:
+    GetTodoRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: GetTodoRole
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statements:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: GetTodoPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - dynamodb:DescribeTable
+                    - dynamodb:Query
+                  Resource:
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}/index/${self:provider.environment.TODOS_CREATED_AT_INDEX}
+    
+    CreateTodoRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: CreateTodoRole
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: CreateTodoPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - dynamodb:PutItem
+                  Resource:
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}/index/${self:provider.environment.TODOS_CREATED_AT_INDEX}
+    
+    UpdateTodoRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: UpdateTodoRole
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: UpdateTodoPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - dynamodb:UpdateItem
+                  Resource:
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}/index/${self:provider.environment.TODOS_CREATED_AT_INDEX}
+    
+    DeleteTodoRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: DeleteTodoRole
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: DeleteTodoPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - dynamodb:DeleteItem
+                  Resource:
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}/index/${self:provider.environment.TODOS_CREATED_AT_INDEX}
+    
+    GenerateUploadUrlRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: GenerateUploadUrlRole
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: GenerateUploadUrlPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:PutObject
+                  Resource:
+                    - "arn:aws:s3:::${self:provider.environment.ATTACHMENT_S3_BUCKET}/*"
+          - PolicyName: UpdateTodoPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - dynamodb:UpdateItem
+                  Resource:
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}
+                    - arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.TODOS_TABLE}/index/${self:provider.environment.TODOS_CREATED_AT_INDEX}
+    
+    GatewayResponseDefault4XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+          gatewayresponse.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+
+        ResponseType: DEFAULT_4XX
+        RestApiId:
+          Ref: ApiGatewayRestApi
+    
+    TodosTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TODOS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: todoId
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: todoId
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: ${self:provider.environment.TODOS_CREATED_AT_INDEX}
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    
+    AttachmentsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.ATTACHMENT_S3_BUCKET}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedOrigins:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              AllowedHeaders:
+                - '*'
+              MaxAge: 3000
+    
+    BucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        PolicyDocument:
+          Id: ${self:provider.environment.ATTACHMENT_S3_BUCKET}-policy
+          Version: "2012-10-17"
+          Statement:
+            - Sid: PublicReadForGetBucketObjects
+              Effect: Allow
+              Principal: '*'
+              Action: 's3:GetObject'
+              Resource: 'arn:aws:s3:::${self:provider.environment.ATTACHMENT_S3_BUCKET}/*'
+        Bucket: !Ref AttachmentsBucket
