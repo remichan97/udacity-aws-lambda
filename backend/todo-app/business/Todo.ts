@@ -4,7 +4,7 @@ import { CreateRequest } from '../requests/CreateRequest'
 import { UpdateRequest } from '../requests/UpdateRequest'
 import { TodoUpdate } from '../models/TodoUpdate'
 import { TodoAccess } from '../data/TodoAccess'
-import * as crypto from 'crypto'
+import * as crypto from 'crypto-randomuuid'
 
 const access = new TodoAccess()
 

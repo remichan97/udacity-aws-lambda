@@ -6,9 +6,11 @@ app: todo-app
 service: todo-app
 
 plugins:
-  - serverless-webpack
   - serverless-iam-roles-per-function
-  - serverless-plugin-tracing
+
+package: 
+  patterns:
+    - '!node_modules/**'
 
 provider:
   name: aws
@@ -18,8 +20,8 @@ provider:
   region: 'us-east-1'
 
   tracing:
-    lambda: true
     apiGateway: true
+    lambda: true
 
   logs:
     restApi:
@@ -38,19 +40,13 @@ provider:
   environment:
     TODOS_TABLE: Todos-${self:provider.stage}
     TODOS_CREATED_AT_INDEX: CreatedAtIndex
-    ATTACHMENT_S3_BUCKET: serverless-c4-todo-images-${self:provider.stage}
+    ATTACHMENT_S3_BUCKET: todo-images-${self:provider.stage}
     SIGNED_URL_EXPIRATION: 300
 
 functions:
   Auth:
     handler: todo-app/lambda/auth/auth0Authoriser.handler
-    events:
-      - http:
-          path: todos
-          method: get
-          cors: true
-          authorizer: Auth
-
+    
   GetTodos:
     handler: todo-app/lambda/http/getTodos.handler
     events:
@@ -70,8 +66,8 @@ functions:
           cors: true
           authorizer: Auth
           request:
-            schema:
-              application/json: ${file(validation/create-todo-model.json)}
+            schemas:
+              application/json: ${file(../validation/create-todo-model.json)}
     role: CreateTodoRole
 
   UpdateTodo:
@@ -80,9 +76,11 @@ functions:
       - http:
           method: patch
           path: todos/{todoId}
+          cors: true
+          authorizer: Auth
           request:
-            schema:
-              application/json: ${file(validation/update-todo-model.json)}
+            schemas:
+              application/json: ${file(../validation/update-todo-model.json)}
     role: UpdateTodoRole
 
   DeleteTodo:
@@ -90,7 +88,9 @@ functions:
     events:
       - http:
           method: delete
+          cors: true
           path: todos/{todoId}
+          authorizer: Auth
     role: DeleteTodoRole
 
   GenerateUploadUrl:
@@ -98,7 +98,9 @@ functions:
     events:
       - http:
           method: post
+          cors: true
           path: todos/{todoId}/attatchment
+          authorizer: Auth
     role: GenerateUploadUrlRole
 
 resources:
@@ -109,7 +111,7 @@ resources:
         RoleName: GetTodoRole
         AssumeRolePolicyDocument:
           Version: '2012-10-17'
-          Statements:
+          Statement:
             - Effect: Allow
               Principal:
                 Service:
@@ -238,7 +240,7 @@ resources:
       Properties:
         ResponseParameters:
           gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
-          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
           gatewayresponse.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
 
         ResponseType: DEFAULT_4XX
@@ -276,6 +278,8 @@ resources:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:provider.environment.ATTACHMENT_S3_BUCKET}
+        PublicAccessBlockConfiguration:
+          BlockPublicPolicy: false
         CorsConfiguration:
           CorsRules:
             - AllowedOrigins:
